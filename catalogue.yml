@@ -1,0 +1,84 @@
+---
+- name: Catalogue palybook
+  hosts: Catalogue
+  become: yes
+  tasks:
+  - name: Disable old nodejs and enable nodejs:18
+    ansible.builtin.shell: dnf module disable nodejs -y ; dnf module enable nodejs:18 -y
+#Shell and command module, shell with login to target server to run 
+
+  - name: Install NodeJS
+    ansible.builtin.dnf: 
+      name: nodejs
+      state: present
+
+  - name: Creat roboshop user
+    ansible.builtin.user: #Ansible user module
+      name: roboshop
+
+  - name: Remove app directory
+    ansible.builtin.file: #Ansible file module
+      path: /app
+      state: absent
+
+  - name: Creat app directory
+    ansible.builtin.file: #Ansible file module
+      path: /app
+      state: directory
+
+  - name: Download the application code to created app directory.
+    ansible.builtin.get_url: #Ansible get url module
+      url: https://roboshop-builds.s3.amazonaws.com/catalogue.zip
+      dest: /tmp
+    
+  - name: Unzip
+    ansible.builtin.unarchive: #Ansible unzip module
+      src: /tmp/catalogue.zip
+      dest: /app
+      remote_src: yes #Because the file is already available in remote server 
+
+  - name: Install dependencies
+    ansible.builtin.command: npm install
+    args:
+      chdir: /app
+
+  - name: Copy the catalogue.service file
+    ansible.builtin.copy:  #Search "ansible copy module" in google to find the modules
+      src: catalogue.service
+      dest: /etc/systemd/system/catalogue.service
+
+  - name: Daemon reload
+    ansible.builtin.systemd_service:  #Ansible systectl module
+      daemon_reload: true
+
+#Let's load the data the we can start the catalogue service 
+
+  - name: Copy the mongodb.repo file
+    ansible.builtin.copy:  #Search ansible copy module in google to find the modules
+      src: mongodb.repo
+      dest: /etc/yum.repos.d/mongo.repo 
+
+  - name: Install MongoDB Client
+    ansible.builtin.package: #Ansible package module
+      name: mongodb-org-shell 
+      state: present
+
+  - name: Get the catagories count #if the count is 0 i.e, no data in catalogue server
+    ansible.builtin.command: mongo --host mongodb.sureshvadde.online --quiet --eval 'db = db.getSiblingDB("catalogue"); db.products.count()'
+    register: product_count
+
+  - name: print the count
+    ansible.builtin.debug: #To print the content
+      msg: "product_count: {{product_count}}"
+
+  - name: Load catalogue data 
+    ansible.builtin.command: mongo --host mongodb.sureshvadde.online < /app/schema/catalogue.js
+    when: product_count.stdout == "0" #When is a condition in ansible like if & else in linux
+
+
+
+  - name: Start & Enable Catalogue Service
+    ansible.builtin.service: 
+      name: catalogue
+      state: started
+      enabled: yes 
