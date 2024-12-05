@@ -1,0 +1,81 @@
+- name: Shipping playbook
+  hosts: Shipping
+  become: yes 
+  vars:
+    mysql_password: RoboShop@1
+  tasks:
+  - name: Install maven
+    ansible.builtin.dnf:
+      name: maven
+      state: present
+
+  - name: Creat roboshop user
+    ansible.builtin.user: #Ansible user module
+      name: roboshop
+
+  - name: Remove app directory
+    ansible.builtin.file: #Ansible file module
+      path: /app
+      state: absent
+
+  - name: Creat app directory
+    ansible.builtin.file: #Ansible file module
+      path: /app
+      state: directory
+
+  - name: Download the application code to created app directory.
+    ansible.builtin.get_url: #Ansible get url module
+      url: https://roboshop-builds.s3.amazonaws.com/shipping.zip
+      dest: /tmp
+    
+  - name: Unzip
+    ansible.builtin.unarchive: #Ansible unzip module
+      src: /tmp/shipping.zip
+      dest: /app
+      remote_src: yes #Because the file is already available in remote server 
+
+  - name: Install dependecies
+    ansible.builtin.command: mvn clean package
+    args:
+      chdir: /app
+
+  - name: Rename jar file 
+    ansible.builtin.command: mv target/shipping-1.0.jar shipping.jar
+    args:
+      chdir: /app
+
+  - name: Copy the shiping.service 
+    ansible.builtin.copy: 
+      src: shipping.service
+      dest: /etc/systemd/system/shipping.service
+
+  - name: Daemon reload
+    ansible.builtin.systemd_service:  
+      daemon_reload: true
+
+  - name: Install mysql client
+    ansible.builtin.dnf: #dnf or package
+      name: mysql
+      state: present
+
+  - name: check cities schema exists or not
+    ansible.builtin.command:  mysql -h mysql.sureshvadde.online -uroot -p{{mysql_password}} -sN -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'cities'"
+    register: schema
+
+  - name: print output
+    ansible.builtin.debug:
+      msg: "schema output: {{schema}}"
+
+  - name: load cities data
+    ansible.builtin.shell: "mysql -h mysql.sureshvadde.online -uroot -p{{mysql_password}}  < /app/schema/shipping.sql"
+    when: schema.stdout != "1"
+
+  - name: start and enable shipping
+    ansible.builtin.service:
+      name: shipping
+      state: restarted
+      enabled: yes
+  
+      
+
+  
