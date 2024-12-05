@@ -1,0 +1,58 @@
+---
+- name: Payment palybook
+  hosts: Payment
+  become: yes
+  tasks:
+  - name: Install Python packages
+    ansible.builtin.dnf: 
+      name: "{{item}}"
+      state: present
+    loop:
+    - python36
+    - gcc
+    - python3-devel
+
+  - name: Creat roboshop user
+    ansible.builtin.user: #Ansible user module
+      name: roboshop
+
+  - name: Remove app directory
+    ansible.builtin.file: #Ansible file module
+      path: /app
+      state: absent
+
+  - name: Creat app directory
+    ansible.builtin.file: #Ansible file module
+      path: /app
+      state: directory
+
+  - name: Download the application code to created app directory.
+    ansible.builtin.get_url: #Ansible get url module
+      url: https://roboshop-builds.s3.amazonaws.com/payment.zip
+      dest: /tmp
+    
+  - name: Unzip
+    ansible.builtin.unarchive: #Ansible unzip module
+      src: /tmp/payment.zip
+      dest: /app
+      remote_src: yes #Because the file is already available in remote server 
+
+  - name: Install dependencies
+    ansible.builtin.command: pip3.6 install -r requirements.txt
+    args:
+      chdir: /app
+
+  - name: Copy the payment.service file
+    ansible.builtin.copy:  #Search "ansible copy module" in google to find the modules
+      src: payment.service
+      dest: /etc/systemd/system/payment.service
+
+  - name: Daemon reload
+    ansible.builtin.systemd_service:  #Ansible systectl module
+      daemon_reload: true
+
+  - name: Start & Enable payment Service
+    ansible.builtin.service: 
+      name: payment
+      state: started
+      enabled: yes 
